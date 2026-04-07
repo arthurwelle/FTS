@@ -1,0 +1,4 @@
+exclude:
+  - "*.Rmd"
+  - "*.R"
+  - "*.Rhistory"
