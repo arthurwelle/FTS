@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Força de Trabalho em Saúde — Municípios Brasileiros</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+</head>
+<body>
+  <div id="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p id="loading-msg">Carregando dados...</p>
+  </div>
+
+  <header id="app-header">
+    <h1>Força de Trabalho em Saúde — Municípios Brasileiros</h1>
+    <p id="hover-label">Passe o mouse sobre um município</p>
+    <a id="metodologia-link" href="metodologia.html" target="_blank">Metodologia ↗</a>
+  </header>
+
+  <div id="app-layout">
+
+    <!-- LEFT: MAP -->
+    <div id="map-panel">
+      <div id="choro-legend"></div>
+    </div>
+
+    <!-- RIGHT: INFO PANEL -->
+    <div id="info-panel">
+
+      <div id="placeholder">
+        <span>← Passe o mouse sobre um município</span>
+      </div>
+
+      <div id="panel-content" style="display:none">
+
+        <div id="info-header">
+          <h2 id="mun-name">—</h2>
+          <span id="mun-state"></span>
+        </div>
+
+        <!-- TABELA CRUZADA -->
+        <section class="data-section">
+          <h3>Vínculos por Grupo de Ocupação/Setor e Natureza Jurídica</h3>
+          <div id="tabela-content">
+            <p class="no-data">Sem dados para este município.</p>
+          </div>
+        </section>
+
+        <!-- GRÁFICO DE BARRAS -->
+        <section class="data-section">
+          <h3>Distribuição por Natureza Jurídica</h3>
+          <div id="chart-content">
+            <p class="no-data">Sem dados para este município.</p>
+          </div>
+        </section>
+
+      </div><!-- /panel-content -->
+    </div><!-- /info-panel -->
+
+  </div><!-- /app-layout -->
+
+  <script src="script.js"></script>
+</body>
+</html>

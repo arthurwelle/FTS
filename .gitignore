@@ -1,0 +1,14 @@
+# Arquivos gerados pelo R
+*.html
+!index.html
+*.RData
+.Rhistory
+
+# GEO: PMTiles são grandes binários — decidir se vai commitar ou não
+# Descomente as linhas abaixo se preferir não versionar os PMTiles:
+# GEO/
+
+# Outros
+.DS_Store
+Thumbs.db
+node_modules/

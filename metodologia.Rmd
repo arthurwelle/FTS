@@ -1,0 +1,99 @@
+---
+title: "Metodologia — Força de Trabalho em Saúde nos Municípios Brasileiros"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Contexto
+
+A Força de Trabalho em Saúde (FTS) compreende os trabalhadores que exercem **ocupações de saúde** (médicos, enfermeiros, técnicos, agentes comunitários, etc.) **no setor de saúde** (hospitais, clínicas, postos de saúde e similares). Além desse núcleo, existem trabalhadores de saúde em outros setores e trabalhadores de outros setores inseridos no setor saúde.
+
+Este dashboard apresenta a distribuição dos vínculos formais (RAIS) por município brasileiro, cruzando:
+
+- **Grupo ocupação × setor**: FTS stricto sensu vs. categorias adjacentes
+- **Natureza jurídica do empregador**: público, privado, sem fins lucrativos, outros
+
+---
+
+# Fonte de Dados
+
+**RAIS — Relação Anual de Informações Sociais** (Ministério do Trabalho e Emprego).
+
+Os dados foram processados a partir dos microdados da RAIS, com seleção de vínculos ativos no ano de referência e classificação em quatro grupos mutuamente excludentes com base em dois eixos:
+
+1. **Eixo ocupação**: se a CBO do trabalhador pertence às ocupações de saúde definidas pela Comissão Nacional de Classificação
+2. **Eixo setor**: se o CNAE do estabelecimento pertence à divisão de saúde humana
+
+---
+
+# Variáveis
+
+| Variável | Descrição |
+|---|---|
+| `grupo_saude` | Cruzamento ocupação × setor (4 categorias) |
+| `id_municipio` | Código IBGE do município (6 dígitos, sem dígito verificador) |
+| `natureza_juridica_` | Natureza jurídica do empregador (4 categorias) |
+| `n` | Quantidade de vínculos empregatícios |
+
+## Categorias de grupo_saude
+
+| Código | Descrição |
+|---|---|
+| `OcupSaude_SetorSaude` | Ocupação de saúde **e** setor de saúde — FTS stricto sensu |
+| `OcupSaude_SetorOutros` | Ocupação de saúde em outros setores |
+| `OcupOutros_SetorSaude` | Outras ocupações no setor de saúde |
+| `OcupOutros_SetorOutros` | Outras ocupações em outros setores (referência) |
+
+## Categorias de natureza jurídica
+
+| Código | Descrição |
+|---|---|
+| `Publico` | Administração pública direta e indireta (federal, estadual, municipal) |
+| `Privado` | Empresas privadas com fins lucrativos |
+| `Sem Fins Lucrativos` | Entidades filantrópicas, OSCIPs, fundações |
+| `Outros` | Demais naturezas jurídicas |
+
+---
+
+# Mapa Coroplético
+
+O mapa coloriza cada município pela **proporção de vínculos FTS** (`OcupSaude_SetorSaude`) sobre o total de vínculos no município:
+
+$$\text{% FTS} = \frac{n_{\text{OcupSaude\_SetorSaude}}}{\sum_{\text{grupos}} n}$$
+
+As quatro classes de cor correspondem aos intervalos: < 3%, 3–7%, 7–15% e > 15%.
+
+---
+
+# Processamento
+
+O código de processamento dos microdados da RAIS encontra-se no arquivo `RAIS_Saude_v2.Rmd` na raiz do projeto, que detalha:
+
+- Seleção de vínculos ativos
+- Classificação de ocupações de saúde (CBO)
+- Classificação de setores de saúde (CNAE)
+- Agregação por município e natureza jurídica
+
+---
+
+# Limitações
+
+- A RAIS cobre apenas o **mercado formal** de trabalho; trabalhadores informais não estão incluídos.
+- A classificação de ocupações e setores segue as tabelas CBO e CNAE vigentes no ano de referência.
+- O código de município na RAIS possui **6 dígitos** (sem o dígito verificador do IBGE); a compatibilização com o mapa utiliza a relação `id_rais = floor(code_ibge / 10)`.
+
+---
+
+# Referências
+
+- IBGE. *Classificação Nacional de Atividades Econômicas (CNAE)*. Rio de Janeiro: IBGE.
+- MTE. *Manual de Orientação da RAIS*. Ministério do Trabalho e Emprego.
+- OPAS/OMS. *Força de Trabalho em Saúde nas Américas*. Washington, DC, 2023.
