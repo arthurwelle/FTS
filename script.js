@@ -5,12 +5,6 @@
 const fmtN   = d3.format(",.0f");
 const fmtPct = d3.format(".1%");
 
-// Converte a string "rgb(r, g, b)" do D3 para "#rrggbb"
-// MapLibre não aceita rgb() em match expressions — precisa de hex
-function toHex(rgbStr) {
-  const m = rgbStr.match(/\d+/g);
-  return '#' + m.map(x => (+x).toString(16).padStart(2, '0')).join('');
-}
 
 // ============================================================
 // SECTION 2: TOOLTIP ELEMENT
@@ -138,7 +132,7 @@ const map = new maplibregl.Map({
       estados: {
         type: 'vector',
         url: 'pmtiles://./GEO/ufs.pmtiles',
-        promoteId: 'code_state'
+        promoteId: { 'ufs': 'code_state' }
       }
     },
     layers: [
@@ -279,7 +273,17 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
   // ── Choropleth ─────────────────────────────────────────────
 
-  const colorScale = t => toHex(d3.interpolateViridis(t));
+  // Escala discreta: 4 bins para % público na FTS
+  const choroBins   = [0, 0.20, 0.40, 0.60, Infinity];
+  const choroColors = ['#ffffb2', '#fecc5c', '#fd8d3c', '#e31a1c'];
+  const choroLabels = ['< 20%', '20–40%', '40–60%', '> 60%'];
+
+  function colorScale(ratio) {
+    for (let i = 0; i < choroBins.length - 1; i++) {
+      if (ratio < choroBins[i + 1]) return choroColors[i];
+    }
+    return choroColors[choroColors.length - 1];
+  }
 
   function computeChoroMap(level) {
     const cmap = new Map();
@@ -320,8 +324,8 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
   function renderLegend() {
     const container = document.getElementById('choro-legend');
     container.innerHTML = '';
-    const W = 140, H = 58;
-    const barX = 0, barY = 14, barW = W - 10, barH = 12;
+    const W = 140, H = 80;
+    const barY = 14;
 
     const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
 
@@ -329,29 +333,21 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       .attr('font-size', 9).attr('fill', '#555').attr('font-weight', 'bold')
       .text('% Público na FTS');
 
-    const defs = svg.append('defs');
-    const grad = defs.append('linearGradient').attr('id', 'viridis-grad')
-      .attr('x1', '0%').attr('x2', '100%');
-    d3.range(0, 1.01, 0.05).forEach(t => {
-      grad.append('stop').attr('offset', `${Math.round(t * 100)}%`)
-        .attr('stop-color', toHex(d3.interpolateViridis(t)));
+    const SW = 14, SH = 10, gap = 3, rowH = SH + gap;
+    choroColors.forEach((col, i) => {
+      const y = barY + i * rowH;
+      svg.append('rect').attr('x', 0).attr('y', y)
+        .attr('width', SW).attr('height', SH)
+        .attr('fill', col).attr('stroke', '#aaa').attr('stroke-width', 0.5);
+      svg.append('text').attr('x', SW + 4).attr('y', y + SH - 2)
+        .attr('font-size', 10).attr('fill', '#333').text(choroLabels[i]);
     });
-
-    svg.append('rect').attr('x', barX).attr('y', barY)
-      .attr('width', barW).attr('height', barH).attr('fill', 'url(#viridis-grad)');
-
-    [0, 0.5, 1].forEach(t => {
-      svg.append('text')
-        .attr('x', barX + t * barW).attr('y', barY + barH + 9)
-        .attr('font-size', 9).attr('fill', '#333').attr('text-anchor', 'middle')
-        .text(`${Math.round(t * 100)}%`);
-    });
-
-    svg.append('rect').attr('x', 0).attr('y', barY + barH + 18)
-      .attr('width', 10).attr('height', 8).attr('fill', '#d0d0d0')
+    const yNoData = barY + choroColors.length * rowH + 4;
+    svg.append('rect').attr('x', 0).attr('y', yNoData)
+      .attr('width', SW).attr('height', SH).attr('fill', '#d0d0d0')
       .attr('stroke', '#aaa').attr('stroke-width', 0.5);
-    svg.append('text').attr('x', 14).attr('y', barY + barH + 26)
-      .attr('font-size', 9).attr('fill', '#555').text('Sem dado');
+    svg.append('text').attr('x', SW + 4).attr('y', yNoData + SH - 2)
+      .attr('font-size', 10).attr('fill', '#555').text('Sem dado');
   }
 
   // ── Troca de nível ────────────────────────────────────────
@@ -432,6 +428,7 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
     });
 
     map.on('mouseleave', layerId, () => {
+      if (currentLevel === 'brasil') return;
       const cfg = LEVEL_CFG[currentLevel];
       if (hoveredId !== null) {
         map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: hoveredId },

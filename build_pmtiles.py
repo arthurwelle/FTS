@@ -129,6 +129,14 @@ if __name__ == "__main__":
     GEO_DST = "GEO"
 
     gpkg_to_pmtiles(
+        gpkg_path    = f"{GEO_SRC}/ufs.gpkg",
+        pmtiles_path = f"{GEO_DST}/ufs.pmtiles",
+        layer_name   = "ufs",
+        id_field     = "code_state",
+        zoom_min=2, zoom_max=8,
+    )
+
+    gpkg_to_pmtiles(
         gpkg_path    = f"{GEO_SRC}/meso.gpkg",
         pmtiles_path = f"{GEO_DST}/meso.pmtiles",
         layer_name   = "meso",
