@@ -2,8 +2,15 @@
 // SECTION 1: SHARED FORMATTERS
 // ============================================================
 
-const fmtN   = d3.format(",.0f");
-const fmtPct = d3.format(".1%");
+// Formatação brasileira: ponto para milhar, vírgula para decimal
+const _localesBR = d3.formatLocale({
+  decimal:   ',',
+  thousands: '.',
+  grouping:  [3],
+  currency:  ['R$\u00a0', ''],
+});
+const fmtN   = _localesBR.format(',.0f');
+const fmtPct = v => _localesBR.format('.1f')(v * 100) + '%';
 
 
 // ============================================================
@@ -221,7 +228,7 @@ const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, of
 // SECTION 5: HOVER / CLICK STATE + NÍVEL ATUAL
 // ============================================================
 
-let currentLevel = 'municipio';
+let currentLevel = 'micro';
 let hoveredId    = null;
 let selectedId   = null;
 
@@ -271,7 +278,7 @@ function rendaPonderada(rows) {
   return d3.sum(rows, r => r.Qtd * r.valor_remuneracao_media_) / totalQtd;
 }
 
-const fmtBRL = v => v == null ? '—' : 'R$ ' + d3.format(',.0f')(v);
+const fmtBRL = v => v == null ? '—' : _localesBR.format('$,.0f')(v);
 
 // ============================================================
 // SECTION 7: CARREGA DADOS + INICIALIZA
@@ -523,7 +530,7 @@ Promise.all([
   // ── Carregamento do mapa ─────────────────────────────────
 
   map.on('load', () => {
-    applyChoropleth(currentLevel);
+    switchLevel('micro');   // nível inicial = microrregião
     document.getElementById('loading-overlay').style.display = 'none';
   });
 
@@ -636,8 +643,8 @@ Promise.all([
       return obj;
     });
 
-    const margin = { top: 10, right: 14, bottom: 28, left: 180 };
-    const W = 500, H = 140;
+    const margin = { top: 6, right: 10, bottom: 20, left: 160 };
+    const W = 440, H = 110;
     const iW = W - margin.left - margin.right;
     const iH = H - margin.top  - margin.bottom;
 
@@ -690,153 +697,96 @@ Promise.all([
   }
 
   // ============================================================
-  // SECTION 11: STACKED BAR ÚNICA — FTS (excl. OcupOutros_SetorOutros)
+  // ============================================================
+  // SECTION 11–13: PIZZAS DE VÍNCULOS
   // ============================================================
 
   function renderFtsBar(rows2) {
-    const container = d3.select("#fts-bar-content");
-    container.html("");
-
-    // Filtra FTS relevantes (exclui OcupOutros_SetorOutros)
-    const FTS_KEYS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
-    const validRows = rows2.filter(r => FTS_KEYS.includes(r.FTS));
-
-    if (validRows.length === 0) {
-      container.append("p").attr("class", "no-data").text("Sem dados para esta região.");
-      return;
-    }
-
-    // Soma Qtd por FTS
-    const totByFts = {};
-    FTS_KEYS.forEach(k => { totByFts[k] = 0; });
-    validRows.forEach(r => { if (totByFts[r.FTS] !== undefined) totByFts[r.FTS] += r.Qtd; });
-    const total = d3.sum(FTS_KEYS, k => totByFts[k]);
-
-    renderSingleStackedBar(
-      container,
-      FTS_KEYS,
-      FTS2_COLORS,
-      FTS2_LABELS,
-      k => totByFts[k],
-      total,
-      "vínculos FTS"
-    );
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    const totByKey = {};
+    FTS_GRUPOS.forEach(k => { totByKey[k] = 0; });
+    validRows.forEach(r => { if (totByKey[r.FTS] !== undefined) totByKey[r.FTS] += r.Qtd; });
+    renderPie(d3.select("#fts-bar-content"), FTS_GRUPOS, FTS2_COLORS, FTS2_LABELS, k => totByKey[k], "vínculos FTS");
   }
-
-  // ============================================================
-  // SECTION 12: STACKED BAR ÚNICA — NATUREZA JURÍDICA (excl. OcupOutros_SetorOutros)
-  // ============================================================
 
   function renderNatBar(rows2) {
-    const container = d3.select("#nat-bar-content");
-    container.html("");
-
-    const FTS_KEYS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
-    const validRows = rows2.filter(r => FTS_KEYS.includes(r.FTS));
-
-    if (validRows.length === 0) {
-      container.append("p").attr("class", "no-data").text("Sem dados para esta região.");
-      return;
-    }
-
-    const totByNat = {};
-    NATS.forEach(n => { totByNat[n] = 0; });
-    validRows.forEach(r => { if (totByNat[r.natureza_juridica_] !== undefined) totByNat[r.natureza_juridica_] += r.Qtd; });
-    const total = d3.sum(NATS, n => totByNat[n]);
-
-    renderSingleStackedBar(
-      container,
-      NATS,
-      NAT_COLORS,
-      Object.fromEntries(NATS.map(n => [n, n])),
-      n => totByNat[n],
-      total,
-      "vínculos"
-    );
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    const totByKey = {};
+    NATS.forEach(n => { totByKey[n] = 0; });
+    validRows.forEach(r => { if (totByKey[r.natureza_juridica_] !== undefined) totByKey[r.natureza_juridica_] += r.Qtd; });
+    renderPie(d3.select("#nat-bar-content"), NATS, NAT_COLORS,
+      Object.fromEntries(NATS.map(n => [n, n])), n => totByKey[n], "vínculos");
   }
-
-  // ── Helper: barra única horizontal empilhada ───────────────
-  function renderSingleStackedBar(container, keys, colors, labels, valFn, total, unit) {
-    const W = 460, barH = 36, legendH = 50;
-    const H = barH + legendH + 20;
-    const margin = { left: 0, right: 0 };
-    const iW = W - margin.left - margin.right;
-
-    const wrap = container.append("div").attr("class", "chart-wrap");
-    const svg  = wrap.append("svg")
-      .attr("viewBox", `0 0 ${W} ${H}`)
-      .attr("preserveAspectRatio", "xMidYMid meet");
-
-    const xScale = d3.scaleLinear().domain([0, total]).range([0, iW]);
-
-    // Barras empilhadas
-    let cumX = 0;
-    keys.forEach(k => {
-      const v = valFn(k);
-      const w = xScale(v);
-      if (w < 0.5) { cumX += w; return; }
-
-      svg.append("rect")
-        .attr("x", cumX).attr("y", 4)
-        .attr("width", w).attr("height", barH)
-        .attr("fill", colors[k])
-        .on("mouseover", (event) =>
-          showTooltip(`<strong>${labels[k]}</strong><br>${fmtN(v)} ${unit} (${fmtPct(v / total)})`, event))
-        .on("mousemove", event => moveTooltip(event))
-        .on("mouseout", () => hideTooltip());
-
-      // Label dentro da barra se larga o suficiente
-      if (w > 50) {
-        svg.append("text")
-          .attr("x", cumX + w / 2).attr("y", 4 + barH / 2 + 4)
-          .attr("text-anchor", "middle")
-          .attr("font-size", 10).attr("fill", "#fff").attr("font-weight", "bold")
-          .attr("pointer-events", "none")
-          .text(fmtPct(v / total));
-      }
-      cumX += w;
-    });
-
-    // Total à direita
-    svg.append("text")
-      .attr("x", iW).attr("y", 4 + barH / 2 + 4)
-      .attr("text-anchor", "end")
-      .attr("font-size", 10).attr("fill", "#555")
-      .attr("pointer-events", "none")
-      .text(`n = ${fmtN(total)}`);
-
-    // Legenda abaixo
-    const leg = wrap.append("div").attr("class", "chart-legend");
-    keys.forEach(k => {
-      const v = valFn(k);
-      if (v === 0) return;
-      const span = leg.append("span");
-      span.append("span").attr("class", "swatch").style("background", colors[k]);
-      span.append("span").text(`${labels[k]} (${fmtN(v)})`);
-    });
-  }
-
-  // ============================================================
-  // SECTION 13: STACKED BAR ÚNICA — CBO (excl. OcupOutros_SetorOutros)
-  // ============================================================
 
   function renderCboBar(rows2) {
-    const container = d3.select("#cbo-bar-content");
-    container.html("");
     const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
-    if (validRows.length === 0) {
+    const totByKey = {};
+    CBOS.forEach(c => { totByKey[c] = 0; });
+    validRows.forEach(r => { if (totByKey[r.CBO] !== undefined) totByKey[r.CBO] += r.Qtd; });
+    renderPie(d3.select("#cbo-bar-content"), CBOS, CBO_COLORS,
+      Object.fromEntries(CBOS.map(c => [c, c])), c => totByKey[c], "vínculos");
+  }
+
+  // ── Helper: gráfico de pizza com legenda lateral ──────────
+  function renderPie(container, keys, colors, labels, valFn, unit) {
+    container.html("");
+    const data = keys.map(k => ({ key: k, label: labels[k], color: colors[k], v: valFn(k) }))
+                     .filter(d => d.v > 0);
+    if (data.length === 0) {
       container.append("p").attr("class","no-data").text("Sem dados para esta região."); return;
     }
-    const totByCbo = {};
-    CBOS.forEach(c => { totByCbo[c] = 0; });
-    validRows.forEach(r => { if (totByCbo[r.CBO] !== undefined) totByCbo[r.CBO] += r.Qtd; });
-    const total = d3.sum(CBOS, c => totByCbo[c]);
+    const total = d3.sum(data, d => d.v);
+    const R = 55, W = 340, H = R * 2 + 8;
+    const cx = R + 4, cy = R + 4;
 
-    renderSingleStackedBar(
-      container, CBOS, CBO_COLORS,
-      Object.fromEntries(CBOS.map(c => [c, c])),
-      c => totByCbo[c], total, "vínculos"
-    );
+    const wrap = container.append("div").attr("class","chart-wrap pie-wrap");
+    const svg  = wrap.append("svg")
+      .attr("viewBox", `0 0 ${W} ${H}`)
+      .attr("preserveAspectRatio","xMidYMid meet");
+
+    const pie   = d3.pie().value(d => d.v).sort(null);
+    const arc   = d3.arc().innerRadius(R * 0.42).outerRadius(R);
+    const arcH  = d3.arc().innerRadius(R * 0.42).outerRadius(R * 1.07);
+
+    const g = svg.append("g").attr("transform",`translate(${cx},${cy})`);
+
+    g.selectAll("path")
+      .data(pie(data)).enter().append("path")
+      .attr("d", arc)
+      .attr("fill", d => d.data.color)
+      .attr("stroke","#fff").attr("stroke-width", 1)
+      .on("mouseover", function(event, d) {
+        d3.select(this).attr("d", arcH);
+        showTooltip(
+          `<strong>${d.data.label}</strong><br>${fmtN(d.data.v)} ${unit}<br>${fmtPct(d.data.v / total)}`,
+          event
+        );
+      })
+      .on("mousemove", event => moveTooltip(event))
+      .on("mouseout", function() {
+        d3.select(this).attr("d", arc);
+        hideTooltip();
+      });
+
+    // Total no centro
+    g.append("text").attr("text-anchor","middle").attr("dy","0.1em")
+      .attr("font-size", 9).attr("fill","#555")
+      .text("n =");
+    g.append("text").attr("text-anchor","middle").attr("dy","1.1em")
+      .attr("font-size", 9).attr("fill","#333").attr("font-weight","bold")
+      .text(fmtN(total));
+
+    // Legenda à direita da pizza
+    const legX = cx * 2 + 10;
+    const lineH = 13;
+    data.forEach((d, i) => {
+      const y = 8 + i * lineH;
+      svg.append("rect").attr("x", legX).attr("y", y).attr("width", 8).attr("height", 8)
+        .attr("fill", d.color).attr("rx", 1);
+      svg.append("text").attr("x", legX + 11).attr("y", y + 7.5)
+        .attr("font-size", 9).attr("fill","#333")
+        .text(`${d.label} — ${fmtPct(d.v / total)}`);
+    });
   }
 
   // ============================================================
@@ -889,8 +839,8 @@ Promise.all([
   // ── Helper: barras horizontais de renda ───────────────────
 
   function renderHBarRenda(container, data) {
-    const margin = { top: 4, right: 80, bottom: 20, left: 150 };
-    const W = 460, H = data.length * 22 + margin.top + margin.bottom;
+    const margin = { top: 4, right: 70, bottom: 18, left: 130 };
+    const W = 400, H = data.length * 17 + margin.top + margin.bottom;
     const iW = W - margin.left - margin.right;
     const iH = H - margin.top  - margin.bottom;
 
@@ -931,7 +881,7 @@ Promise.all([
 
     g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
       .call(d3.axisBottom(xScale).ticks(4).tickFormat(d =>
-        d >= 1000 ? 'R$' + d3.format('.0f')(d/1000) + 'k' : 'R$' + d));
+        d >= 1000 ? 'R$' + _localesBR.format('.0f')(d/1000) + 'k' : 'R$' + d));
     g.append("g").attr("class","axis")
       .call(d3.axisLeft(yScale).tickSize(0))
       .select(".domain").remove();
@@ -967,7 +917,7 @@ Promise.all([
     const colorHeat = d3.scaleSequential(d3.interpolateYlOrRd)
       .domain([d3.min(allValues), d3.max(allValues)]);
 
-    const cellW = 80, cellH = 22;
+    const cellW = 70, cellH = 18;
     const margin = { top: 14, right: 10, bottom: 4, left: 150 };
     const W = margin.left + NATS.length * cellW + margin.right;
     const H = margin.top  + CBOS.length * cellH + margin.bottom;

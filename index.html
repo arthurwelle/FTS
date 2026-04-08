@@ -18,7 +18,10 @@
 
   <header id="app-header">
     <h1>Força de Trabalho em Saúde — Municípios Brasileiros</h1>
-    <p id="hover-label">Passe o mouse sobre um município</p>
+    <p id="hover-label">Passe o mouse sobre uma microrregião</p>
+    <a href="https://observatorio.gpdes.com.br/" target="_blank" id="obs-logo-link">
+      <img src="IMG/observatorio.svg" id="obs-logo" alt="Observatório da Desprivatização da Saúde">
+    </a>
     <a id="metodologia-link" href="metodologia.html" target="_blank">Metodologia ↗</a>
   </header>
 
@@ -26,12 +29,11 @@
 
     <!-- LEFT: MAP -->
     <div id="map-panel">
-      <!-- Dropdown de nível geográfico -->
       <div id="nivel-control">
         <label for="nivel-select">Nível geográfico</label>
         <select id="nivel-select">
           <option value="municipio">Município</option>
-          <option value="micro">Microrregião</option>
+          <option value="micro" selected>Microrregião</option>
           <option value="meso">Mesorregião</option>
           <option value="uf">UF</option>
           <option value="brasil">Brasil</option>
@@ -62,7 +64,7 @@
           </div>
         </section>
 
-        <!-- GRÁFICO DE BARRAS -->
+        <!-- GRÁFICO DE BARRAS (CSV1) -->
         <section class="data-section">
           <h3>Distribuição por Natureza Jurídica</h3>
           <div id="chart-content">
@@ -70,7 +72,7 @@
           </div>
         </section>
 
-        <!-- STACKED BAR: FTS -->
+        <!-- PIZZA: FTS -->
         <section class="data-section">
           <h3>Vínculos por Grupo FTS</h3>
           <div id="fts-bar-content">
@@ -78,7 +80,7 @@
           </div>
         </section>
 
-        <!-- STACKED BAR: NATUREZA -->
+        <!-- PIZZA: NATUREZA -->
         <section class="data-section">
           <h3>Vínculos por Natureza Jurídica (excl. Outros Setores)</h3>
           <div id="nat-bar-content">
@@ -86,7 +88,7 @@
           </div>
         </section>
 
-        <!-- STACKED BAR: CBO -->
+        <!-- PIZZA: CBO -->
         <section class="data-section">
           <h3>Vínculos por CBO (excl. Outros Setores)</h3>
           <div id="cbo-bar-content">
