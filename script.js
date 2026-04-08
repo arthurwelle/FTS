@@ -254,6 +254,25 @@ const NAT_COLORS = {
 };
 const FTS_GRUPOS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
 
+// CBO: ordem e cores
+const CBOS = ['Médicos', 'Enfermeiros', 'Técnicos e auxiliares', 'Outros saúde', 'Outros'];
+const CBO_COLORS = {
+  'Médicos':                '#1f4e79',
+  'Enfermeiros':            '#2e75b6',
+  'Técnicos e auxiliares':  '#70ad47',
+  'Outros saúde':           '#ed7d31',
+  'Outros':                 '#bab0ac',
+};
+
+// Função utilitária: média ponderada de renda a partir de rows com .Qtd e .valor_remuneracao_media_
+function rendaPonderada(rows) {
+  const totalQtd = d3.sum(rows, r => r.Qtd);
+  if (totalQtd === 0) return null;
+  return d3.sum(rows, r => r.Qtd * r.valor_remuneracao_media_) / totalQtd;
+}
+
+const fmtBRL = v => v == null ? '—' : 'R$ ' + d3.format(',.0f')(v);
+
 // ============================================================
 // SECTION 7: CARREGA DADOS + INICIALIZA
 // ============================================================
@@ -518,8 +537,9 @@ Promise.all([
       .classed("active", false);
     d3.select("#placeholder").style("display", null);
     d3.select("#panel-content").style("display", "none");
-    d3.select("#fts-bar-content").html('<p class="no-data">Sem dados para esta região.</p>');
-    d3.select("#nat-bar-content").html('<p class="no-data">Sem dados para esta região.</p>');
+    ['#fts-bar-content','#nat-bar-content','#cbo-bar-content',
+     '#renda-cbo-content','#renda-nat-content','#renda-heatmap-content']
+      .forEach(id => d3.select(id).html('<p class="no-data">Sem dados para esta região.</p>'));
   }
 
   function updatePanel(code, name, region) {
@@ -536,6 +556,10 @@ Promise.all([
     renderBarChart(rows);
     renderFtsBar(rows2);
     renderNatBar(rows2);
+    renderCboBar(rows2);
+    renderRendaCbo(rows2);
+    renderRendaNat(rows2);
+    renderRendaHeatmap(rows2);
   }
 
   // ============================================================
@@ -789,6 +813,215 @@ Promise.all([
       const span = leg.append("span");
       span.append("span").attr("class", "swatch").style("background", colors[k]);
       span.append("span").text(`${labels[k]} (${fmtN(v)})`);
+    });
+  }
+
+  // ============================================================
+  // SECTION 13: STACKED BAR ÚNICA — CBO (excl. OcupOutros_SetorOutros)
+  // ============================================================
+
+  function renderCboBar(rows2) {
+    const container = d3.select("#cbo-bar-content");
+    container.html("");
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    if (validRows.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados para esta região."); return;
+    }
+    const totByCbo = {};
+    CBOS.forEach(c => { totByCbo[c] = 0; });
+    validRows.forEach(r => { if (totByCbo[r.CBO] !== undefined) totByCbo[r.CBO] += r.Qtd; });
+    const total = d3.sum(CBOS, c => totByCbo[c]);
+
+    renderSingleStackedBar(
+      container, CBOS, CBO_COLORS,
+      Object.fromEntries(CBOS.map(c => [c, c])),
+      c => totByCbo[c], total, "vínculos"
+    );
+  }
+
+  // ============================================================
+  // SECTION 14: BARRAS HORIZONTAIS — RENDA MÉDIA × CBO
+  // ============================================================
+
+  function renderRendaCbo(rows2) {
+    const container = d3.select("#renda-cbo-content");
+    container.html("");
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    if (validRows.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados para esta região."); return;
+    }
+    // Renda ponderada por CBO
+    const data = CBOS.map(c => ({
+      label: c,
+      color: CBO_COLORS[c],
+      renda: rendaPonderada(validRows.filter(r => r.CBO === c)),
+    })).filter(d => d.renda !== null);
+
+    if (data.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados."); return;
+    }
+    renderHBarRenda(container, data);
+  }
+
+  // ============================================================
+  // SECTION 15: BARRAS HORIZONTAIS — RENDA MÉDIA × NATUREZA JURÍDICA
+  // ============================================================
+
+  function renderRendaNat(rows2) {
+    const container = d3.select("#renda-nat-content");
+    container.html("");
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    if (validRows.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados para esta região."); return;
+    }
+    const data = NATS.map(n => ({
+      label: n,
+      color: NAT_COLORS[n],
+      renda: rendaPonderada(validRows.filter(r => r.natureza_juridica_ === n)),
+    })).filter(d => d.renda !== null);
+
+    if (data.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados."); return;
+    }
+    renderHBarRenda(container, data);
+  }
+
+  // ── Helper: barras horizontais de renda ───────────────────
+
+  function renderHBarRenda(container, data) {
+    const margin = { top: 4, right: 80, bottom: 20, left: 150 };
+    const W = 460, H = data.length * 22 + margin.top + margin.bottom;
+    const iW = W - margin.left - margin.right;
+    const iH = H - margin.top  - margin.bottom;
+
+    const maxRenda = d3.max(data, d => d.renda);
+    const xScale = d3.scaleLinear().domain([0, maxRenda * 1.1]).range([0, iW]);
+    const yScale = d3.scaleBand().domain(data.map(d => d.label)).range([0, iH]).padding(0.25);
+
+    const wrap = container.append("div").attr("class","chart-wrap");
+    const svg  = wrap.append("svg")
+      .attr("viewBox", `0 0 ${W} ${H}`)
+      .attr("preserveAspectRatio","xMidYMid meet");
+    const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+    // Gridlines
+    g.append("g").selectAll("line")
+      .data(xScale.ticks(4)).enter().append("line").attr("class","gridline")
+      .attr("x1", d => xScale(d)).attr("x2", d => xScale(d))
+      .attr("y1", 0).attr("y2", iH);
+
+    // Barras
+    g.selectAll(".bar").data(data).enter().append("rect")
+      .attr("y",      d => yScale(d.label))
+      .attr("x",      0)
+      .attr("width",  d => xScale(d.renda))
+      .attr("height", yScale.bandwidth())
+      .attr("fill",   d => d.color)
+      .on("mouseover", (event, d) =>
+        showTooltip(`<strong>${d.label}</strong><br>Renda média: ${fmtBRL(d.renda)}`, event))
+      .on("mousemove", event => moveTooltip(event))
+      .on("mouseout",  () => hideTooltip());
+
+    // Rótulos de valor à direita
+    g.selectAll(".bar-label").data(data).enter().append("text")
+      .attr("y",  d => yScale(d.label) + yScale.bandwidth() / 2 + 4)
+      .attr("x",  d => xScale(d.renda) + 4)
+      .attr("font-size", 10).attr("fill","#333")
+      .text(d => fmtBRL(d.renda));
+
+    g.append("g").attr("class","axis").attr("transform",`translate(0,${iH})`)
+      .call(d3.axisBottom(xScale).ticks(4).tickFormat(d =>
+        d >= 1000 ? 'R$' + d3.format('.0f')(d/1000) + 'k' : 'R$' + d));
+    g.append("g").attr("class","axis")
+      .call(d3.axisLeft(yScale).tickSize(0))
+      .select(".domain").remove();
+  }
+
+  // ============================================================
+  // SECTION 16: HEATMAP — RENDA MÉDIA × CBO × NATUREZA JURÍDICA
+  // ============================================================
+
+  function renderRendaHeatmap(rows2) {
+    const container = d3.select("#renda-heatmap-content");
+    container.html("");
+    const validRows = rows2.filter(r => FTS_GRUPOS.includes(r.FTS));
+    if (validRows.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados para esta região."); return;
+    }
+
+    // Matriz: CBO × Natureza → renda ponderada
+    const matrix = {};
+    CBOS.forEach(c => {
+      matrix[c] = {};
+      NATS.forEach(n => {
+        const sub = validRows.filter(r => r.CBO === c && r.natureza_juridica_ === n);
+        matrix[c][n] = rendaPonderada(sub);
+      });
+    });
+
+    const allValues = CBOS.flatMap(c => NATS.map(n => matrix[c][n])).filter(v => v !== null);
+    if (allValues.length === 0) {
+      container.append("p").attr("class","no-data").text("Sem dados."); return;
+    }
+
+    const colorHeat = d3.scaleSequential(d3.interpolateYlOrRd)
+      .domain([d3.min(allValues), d3.max(allValues)]);
+
+    const cellW = 80, cellH = 22;
+    const margin = { top: 14, right: 10, bottom: 4, left: 150 };
+    const W = margin.left + NATS.length * cellW + margin.right;
+    const H = margin.top  + CBOS.length * cellH + margin.bottom;
+
+    const wrap = container.append("div").attr("class","chart-wrap");
+    const svg  = wrap.append("svg")
+      .attr("viewBox", `0 0 ${W} ${H}`)
+      .attr("preserveAspectRatio","xMidYMid meet");
+    const g = svg.append("g").attr("transform",`translate(${margin.left},${margin.top})`);
+
+    // Cabeçalho colunas (natureza)
+    NATS.forEach((n, j) => {
+      svg.append("text")
+        .attr("x", margin.left + j * cellW + cellW / 2)
+        .attr("y", margin.top - 3)
+        .attr("text-anchor","middle")
+        .attr("font-size", 9).attr("fill","#333").attr("font-weight","bold")
+        .text(n.length > 10 ? n.slice(0,10) + '…' : n);
+    });
+
+    // Linhas por CBO
+    CBOS.forEach((c, i) => {
+      // Label esquerda
+      svg.append("text")
+        .attr("x", margin.left - 4)
+        .attr("y", margin.top + i * cellH + cellH / 2 + 4)
+        .attr("text-anchor","end")
+        .attr("font-size", 9).attr("fill","#333")
+        .text(c);
+
+      NATS.forEach((n, j) => {
+        const val = matrix[c][n];
+        const x = j * cellW, y = i * cellH;
+
+        g.append("rect")
+          .attr("x", x).attr("y", y)
+          .attr("width", cellW - 2).attr("height", cellH - 2)
+          .attr("fill", val !== null ? colorHeat(val) : '#eee')
+          .attr("rx", 2)
+          .on("mouseover", (event) =>
+            showTooltip(`<strong>${c} × ${n}</strong><br>Renda média: ${fmtBRL(val)}`, event))
+          .on("mousemove", event => moveTooltip(event))
+          .on("mouseout",  () => hideTooltip());
+
+        if (val !== null) {
+          g.append("text")
+            .attr("x", x + cellW / 2 - 1).attr("y", y + cellH / 2 + 4)
+            .attr("text-anchor","middle")
+            .attr("font-size", 8)
+            .attr("fill", colorHeat(val) > '#c0' ? '#333' : '#fff')
+            .attr("pointer-events","none")
+            .text('R$' + d3.format(',.0f')(val/1000) + 'k');
+        }
+      });
     });
   }
 
