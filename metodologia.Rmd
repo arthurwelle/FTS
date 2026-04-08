@@ -29,8 +29,8 @@ Este dashboard apresenta a distribuição dos vínculos formais (RAIS) por munic
 
 Os dados foram processados a partir dos microdados da RAIS, com seleção de vínculos ativos no ano de referência e classificação em quatro grupos mutuamente excludentes com base em dois eixos:
 
-1. **Eixo ocupação**: se a CBO do trabalhador pertence às ocupações de saúde definidas pela Comissão Nacional de Classificação
-2. **Eixo setor**: se o CNAE do estabelecimento pertence à divisão de saúde humana
+1. **Eixo ocupação**: se a CBO do trabalhador pertence às ocupações;
+2. **Eixo setor**: se o CNAE do estabelecimento pertence à divisão de saúde (CNAE 86 e 87)
 
 ---
 
@@ -61,15 +61,6 @@ Os dados foram processados a partir dos microdados da RAIS, com seleção de ví
 | `Sem Fins Lucrativos` | Entidades filantrópicas, OSCIPs, fundações |
 | `Outros` | Demais naturezas jurídicas |
 
----
-
-# Mapa Coroplético
-
-O mapa coloriza cada município pela **proporção de vínculos FTS** (`OcupSaude_SetorSaude`) sobre o total de vínculos no município:
-
-$$\text{% FTS} = \frac{n_{\text{OcupSaude\_SetorSaude}}}{\sum_{\text{grupos}} n}$$
-
-As quatro classes de cor correspondem aos intervalos: < 3%, 3–7%, 7–15% e > 15%.
 
 ---
 
@@ -88,7 +79,6 @@ O código de processamento dos microdados da RAIS encontra-se no arquivo `RAIS_S
 
 - A RAIS cobre apenas o **mercado formal** de trabalho; trabalhadores informais não estão incluídos.
 - A classificação de ocupações e setores segue as tabelas CBO e CNAE vigentes no ano de referência.
-- O código de município na RAIS possui **6 dígitos** (sem o dígito verificador do IBGE); a compatibilização com o mapa utiliza a relação `id_rais = floor(code_ibge / 10)`.
 
 ---
 

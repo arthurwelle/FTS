@@ -23,7 +23,75 @@ function hideTooltip() {
 }
 
 // ============================================================
-// SECTION 3: PMTILES + MAPLIBRE SETUP
+// SECTION 3: NÍVEL GEOGRÁFICO — CONFIGURAÇÃO
+// ============================================================
+
+// Configuração de cada nível: quais camadas mostrar, como extrair código e nome
+const LEVEL_CFG = {
+  municipio: {
+    layers:     ['mun-fill', 'mun-outline', 'mun-sel-fill', 'mun-sel-stroke'],
+    eventLayer: 'mun-fill',
+    src: 'municipios', srcLayer: 'mun',
+    // code_muni tem 7 dígitos; id_municipio na tabela tem 6 → floor(code_muni/10)
+    codeFromProps: p => String(Math.floor(p.code_muni / 10)),
+    matchExprKey:  () => ['floor', ['/', ['get', 'code_muni'], 10]],
+    nameFromProps: p => p.name_muni,
+    regionFromProps: p => p.abbrev_state,
+    dataField: 'id_municipio',
+  },
+  micro: {
+    layers:     ['micro-fill', 'micro-outline', 'micro-sel-fill', 'micro-sel-stroke'],
+    eventLayer: 'micro-fill',
+    src: 'micro', srcLayer: 'micro',
+    codeFromProps: p => String(Math.round(p.code_micro)),
+    matchExprKey:  () => ['round', ['get', 'code_micro']],
+    nameFromProps: p => p.name_micro,
+    regionFromProps: p => p.abbrev_state,
+    dataField: 'id_micro',
+  },
+  meso: {
+    layers:     ['meso-fill', 'meso-outline', 'meso-sel-fill', 'meso-sel-stroke'],
+    eventLayer: 'meso-fill',
+    src: 'meso', srcLayer: 'meso',
+    codeFromProps: p => String(Math.round(p.code_meso)),
+    matchExprKey:  () => ['round', ['get', 'code_meso']],
+    nameFromProps: p => p.name_meso,
+    regionFromProps: p => p.abbrev_state,
+    dataField: 'id_meso',
+  },
+  uf: {
+    layers:     ['uf-fill', 'uf-outline', 'uf-sel-fill', 'uf-sel-stroke'],
+    eventLayer: 'uf-fill',
+    src: 'estados', srcLayer: 'ufs',
+    codeFromProps: p => String(Math.round(p.code_state)),
+    matchExprKey:  () => ['round', ['get', 'code_state']],
+    nameFromProps: p => p.name_state,
+    regionFromProps: p => p.abbrev_state,
+    dataField: 'id_uf',
+  },
+  brasil: {
+    // Brasil usa mesmas camadas de UF mas com cor uniforme e hover global
+    layers:     ['uf-fill', 'uf-outline', 'uf-sel-fill', 'uf-sel-stroke'],
+    eventLayer: 'uf-fill',
+    src: 'estados', srcLayer: 'ufs',
+    codeFromProps: () => 'brasil',
+    matchExprKey:  () => null,   // cor uniforme
+    nameFromProps: () => 'Brasil',
+    regionFromProps: () => '',
+    dataField: null,             // usa todos os dados
+  },
+};
+
+// Todos os grupos de camadas (para toggle de visibilidade)
+const ALL_LAYER_GROUPS = {
+  municipio: ['mun-fill', 'mun-outline', 'mun-sel-fill', 'mun-sel-stroke'],
+  micro:     ['micro-fill', 'micro-outline', 'micro-sel-fill', 'micro-sel-stroke'],
+  meso:      ['meso-fill', 'meso-outline', 'meso-sel-fill', 'meso-sel-stroke'],
+  uf:        ['uf-fill', 'uf-outline', 'uf-sel-fill', 'uf-sel-stroke'],
+};
+
+// ============================================================
+// SECTION 4: PMTILES + MAPLIBRE SETUP
 // ============================================================
 
 const protocol = new pmtiles.Protocol();
@@ -50,60 +118,94 @@ const map = new maplibregl.Map({
         url: 'pmtiles://./GEO/municipios.pmtiles',
         promoteId: 'code_muni'
       },
+      meso: {
+        type: 'vector',
+        url: 'pmtiles://./GEO/meso.pmtiles'
+        // IDs inteiros embutidos no MVT (code_meso)
+      },
+      micro: {
+        type: 'vector',
+        url: 'pmtiles://./GEO/micro.pmtiles'
+        // IDs inteiros embutidos no MVT (code_micro)
+      },
       estados: {
         type: 'vector',
-        url: 'pmtiles://./GEO/ufs.pmtiles'
+        url: 'pmtiles://./GEO/ufs.pmtiles',
+        promoteId: 'code_state'
       }
     },
     layers: [
       { id: 'background', type: 'background', paint: { 'background-color': '#d4e8f7' } },
       { id: 'carto-light', type: 'raster', source: 'carto-light' },
-      {
-        id: 'municipios-fill',
-        type: 'fill',
-        source: 'municipios',
-        'source-layer': 'mun',
-        paint: { 'fill-color': '#7ab8d4', 'fill-opacity': 0.85 }
-      },
-      {
-        id: 'municipios-outline',
-        type: 'line',
-        source: 'municipios',
-        'source-layer': 'mun',
-        paint: { 'line-color': '#ffffff', 'line-width': 0.3 }
-      },
-      // Selected municipality highlight (yellow)
-      {
-        id: 'municipios-selected-fill',
-        type: 'fill',
-        source: 'municipios',
-        'source-layer': 'mun',
-        paint: {
-          'fill-color': '#ffe600',
-          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.55, 0]
-        }
-      },
-      {
-        id: 'municipios-selected-stroke',
-        type: 'line',
-        source: 'municipios',
-        'source-layer': 'mun',
-        paint: {
-          'line-color': '#ffe600',
-          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0]
-        }
-      },
-      // State borders
-      {
-        id: 'estados-outline',
-        type: 'line',
-        source: 'estados',
-        'source-layer': 'ufs',
-        paint: {
-          'line-color': '#334',
-          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 2]
-        }
-      }
+
+      // ── Município ──────────────────────────────────────────
+      { id: 'mun-fill',   type: 'fill',   source: 'municipios', 'source-layer': 'mun',
+        layout: { visibility: 'visible' },
+        paint: { 'fill-color': '#7ab8d4', 'fill-opacity': 0.85 } },
+      { id: 'mun-outline', type: 'line',  source: 'municipios', 'source-layer': 'mun',
+        layout: { visibility: 'visible' },
+        paint: { 'line-color': '#ffffff', 'line-width': 0.3 } },
+      { id: 'mun-sel-fill', type: 'fill', source: 'municipios', 'source-layer': 'mun',
+        layout: { visibility: 'visible' },
+        paint: { 'fill-color': '#ffe600',
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.55, 0] } },
+      { id: 'mun-sel-stroke', type: 'line', source: 'municipios', 'source-layer': 'mun',
+        layout: { visibility: 'visible' },
+        paint: { 'line-color': '#ffe600',
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0] } },
+
+      // ── Meso ──────────────────────────────────────────────
+      { id: 'meso-fill',   type: 'fill',  source: 'meso', 'source-layer': 'meso',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#7ab8d4', 'fill-opacity': 0.85 } },
+      { id: 'meso-outline', type: 'line', source: 'meso', 'source-layer': 'meso',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffffff', 'line-width': 0.5 } },
+      { id: 'meso-sel-fill', type: 'fill', source: 'meso', 'source-layer': 'meso',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#ffe600',
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.55, 0] } },
+      { id: 'meso-sel-stroke', type: 'line', source: 'meso', 'source-layer': 'meso',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffe600',
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0] } },
+
+      // ── Micro ──────────────────────────────────────────────
+      { id: 'micro-fill',   type: 'fill',  source: 'micro', 'source-layer': 'micro',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#7ab8d4', 'fill-opacity': 0.85 } },
+      { id: 'micro-outline', type: 'line', source: 'micro', 'source-layer': 'micro',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffffff', 'line-width': 0.4 } },
+      { id: 'micro-sel-fill', type: 'fill', source: 'micro', 'source-layer': 'micro',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#ffe600',
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.55, 0] } },
+      { id: 'micro-sel-stroke', type: 'line', source: 'micro', 'source-layer': 'micro',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffe600',
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0] } },
+
+      // ── UF (também usado para Brasil) ─────────────────────
+      { id: 'uf-fill',   type: 'fill',  source: 'estados', 'source-layer': 'ufs',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#7ab8d4', 'fill-opacity': 0.85 } },
+      { id: 'uf-outline', type: 'line', source: 'estados', 'source-layer': 'ufs',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffffff', 'line-width': 0.8 } },
+      { id: 'uf-sel-fill', type: 'fill', source: 'estados', 'source-layer': 'ufs',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#ffe600',
+          'fill-opacity': ['case', ['boolean', ['feature-state', 'selected'], false], 0.55, 0] } },
+      { id: 'uf-sel-stroke', type: 'line', source: 'estados', 'source-layer': 'ufs',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#ffe600',
+          'line-width': ['case', ['boolean', ['feature-state', 'selected'], false], 2.5, 0] } },
+
+      // ── Bordas de estados (permanente) ────────────────────
+      { id: 'estados-outline', type: 'line', source: 'estados', 'source-layer': 'ufs',
+        paint: { 'line-color': '#334',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 3, 1, 8, 2] } }
     ]
   },
   center: [-52, -14],
@@ -112,88 +214,102 @@ const map = new maplibregl.Map({
 });
 
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-
 const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
 
 // ============================================================
-// SECTION 4: HOVER / CLICK STATE
+// SECTION 5: HOVER / CLICK STATE + NÍVEL ATUAL
 // ============================================================
 
-let hoveredId  = null;
-let selectedId = null;
+let currentLevel = 'municipio';
+let hoveredId    = null;
+let selectedId   = null;
 
 function clearSelection() {
   if (selectedId !== null) {
-    map.setFeatureState({ source: 'municipios', sourceLayer: 'mun', id: selectedId }, { selected: false });
+    const cfg = LEVEL_CFG[currentLevel];
+    map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: selectedId },
+                        { selected: false });
     selectedId = null;
   }
 }
 
 // ============================================================
-// SECTION 5: DATA DEFINITIONS
+// SECTION 6: DADOS — DEFINIÇÕES
 // ============================================================
 
-// Grupos de saúde com labels legíveis
 const GRUPOS = [
   { key: 'OcupSaude_SetorSaude',   label: 'Ocup. Saúde / Setor Saúde (FTS)' },
   { key: 'OcupSaude_SetorOutros',  label: 'Ocup. Saúde / Outros Setores'     },
   { key: 'OcupOutros_SetorSaude',  label: 'Outros / Setor Saúde'             },
-  { key: 'OcupOutros_SetorOutros', label: 'Outros / Outros Setores'           },
+  { key: 'OcupOutros_SetorOutros', label: 'Outros / Outros Setores'          },
 ];
-
+const GRUPOS_CHART = GRUPOS.filter(g => g.key !== 'OcupOutros_SetorOutros');
 const NATS = ['Publico', 'Privado', 'Sem Fins Lucrativos', 'Outros'];
-
-// Cores para natureza jurídica
 const NAT_COLORS = {
-  'Publico':               '#4e79a7',
-  'Privado':               '#f28e2b',
-  'Sem Fins Lucrativos':   '#59a14f',
-  'Outros':                '#bab0ac',
+  'Publico':             '#4e79a7',
+  'Privado':             '#f28e2b',
+  'Sem Fins Lucrativos': '#59a14f',
+  'Outros':              '#bab0ac',
 };
+const FTS_GRUPOS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
 
 // ============================================================
-// SECTION 6: LOAD DATA + WIRE EVERYTHING AFTER MAP LOADS
+// SECTION 7: CARREGA DADOS + INICIALIZA
 // ============================================================
 
 d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
-  // Parse numeric columns e normaliza id
-  raw.forEach(r => {
-    r.n = +r.n;
-    r.id_municipio = String(r.id_municipio).trim();
-  });
+  raw.forEach(r => { r.n = +r.n; });
 
-  // Agrupa por id_municipio (6 dígitos)
-  const dataMap = d3.group(raw, d => d.id_municipio);
+  // Pré-agrega dados por cada nível
+  const dataByLevel = {
+    municipio: d3.group(raw.filter(r => r.id_municipio), r => r.id_municipio),
+    micro:     d3.group(raw.filter(r => r.id_micro),    r => r.id_micro),
+    meso:      d3.group(raw.filter(r => r.id_meso),     r => r.id_meso),
+    uf:        d3.group(raw.filter(r => r.id_uf),       r => r.id_uf),
+    brasil:    new Map([['brasil', raw]]),
+  };
 
-  // --- Choropleth: % público no total da FTS (excluindo OcupOutros_SetorOutros) ---
-  const FTS_GRUPOS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
+  // ── Choropleth ─────────────────────────────────────────────
 
-  const choroMap = new Map();
-  dataMap.forEach((rows, id) => {
-    const ftsRows = rows.filter(r => FTS_GRUPOS.includes(r.grupo_saude));
-    const total   = d3.sum(ftsRows, r => r.n);
-    const publico = d3.sum(ftsRows.filter(r => r.natureza_juridica_ === 'Publico'), r => r.n);
-    choroMap.set(id, total > 0 ? publico / total : 0);
-  });
-
-  // Escala contínua Viridis (0 = mínimo público, 1 = máximo público)
   const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([0, 1]);
 
-  // --- Aplica choropleth ---
-  // Mapeamento 7→6 dígitos via expressão MapLibre: floor(code_muni / 10)
-  function applyChoropleth() {
-    const matchExpr = ['match', ['floor', ['/', ['get', 'code_muni'], 10]]];
-    choroMap.forEach((ratio, id) => {
-      matchExpr.push(parseInt(id));
-      matchExpr.push(colorScale(ratio));
+  function computeChoroMap(level) {
+    const cmap = new Map();
+    dataByLevel[level].forEach((rows, key) => {
+      const ftsRows = rows.filter(r => FTS_GRUPOS.includes(r.grupo_saude));
+      const total   = d3.sum(ftsRows, r => r.n);
+      const pub     = d3.sum(ftsRows.filter(r => r.natureza_juridica_ === 'Publico'), r => r.n);
+      cmap.set(key, total > 0 ? pub / total : 0);
     });
-    matchExpr.push('#d0d0d0'); // municípios sem dado
-    map.setPaintProperty('municipios-fill', 'fill-color', matchExpr);
+    return cmap;
+  }
+
+  function applyChoropleth(level) {
+    const cfg     = LEVEL_CFG[level];
+    const fillId  = cfg.layers[0];   // e.g. 'mun-fill'
+    const cmap    = computeChoroMap(level);
+
+    if (level === 'brasil') {
+      // Cor uniforme = razão nacional
+      const allFts = raw.filter(r => FTS_GRUPOS.includes(r.grupo_saude));
+      const ratio  = d3.sum(allFts.filter(r => r.natureza_juridica_ === 'Publico'), r => r.n)
+                   / d3.sum(allFts, r => r.n);
+      map.setPaintProperty(fillId, 'fill-color', colorScale(ratio));
+    } else {
+      const matchExpr = ['match', cfg.matchExprKey()];
+      cmap.forEach((ratio, id) => {
+        matchExpr.push(parseInt(id));
+        matchExpr.push(colorScale(ratio));
+      });
+      matchExpr.push('#d0d0d0');
+      map.setPaintProperty(fillId, 'fill-color', matchExpr);
+    }
     renderLegend();
   }
 
-  // --- Legenda contínua (gradiente Viridis) ---
+  // ── Legenda Viridis contínua ───────────────────────────────
+
   function renderLegend() {
     const container = document.getElementById('choro-legend');
     container.innerHTML = '';
@@ -202,12 +318,10 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
     const svg = d3.select(container).append('svg').attr('width', W).attr('height', H);
 
-    svg.append('text')
-      .attr('x', 0).attr('y', 10)
+    svg.append('text').attr('x', 0).attr('y', 10)
       .attr('font-size', 9).attr('fill', '#555').attr('font-weight', 'bold')
       .text('% Público na FTS');
 
-    // Gradiente
     const defs = svg.append('defs');
     const grad = defs.append('linearGradient').attr('id', 'viridis-grad')
       .attr('x1', '0%').attr('x2', '100%');
@@ -216,11 +330,9 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
         .attr('stop-color', colorScale(t));
     });
 
-    svg.append('rect')
-      .attr('x', barX).attr('y', barY).attr('width', barW).attr('height', barH)
-      .attr('fill', 'url(#viridis-grad)');
+    svg.append('rect').attr('x', barX).attr('y', barY)
+      .attr('width', barW).attr('height', barH).attr('fill', 'url(#viridis-grad)');
 
-    // Rótulos dos extremos e meio
     [0, 0.5, 1].forEach(t => {
       svg.append('text')
         .attr('x', barX + t * barW).attr('y', barY + barH + 9)
@@ -228,7 +340,6 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
         .text(`${Math.round(t * 100)}%`);
     });
 
-    // Sem dado
     svg.append('rect').attr('x', 0).attr('y', barY + barH + 18)
       .attr('width', 10).attr('height', 8).attr('fill', '#d0d0d0')
       .attr('stroke', '#aaa').attr('stroke-width', 0.5);
@@ -236,215 +347,254 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       .attr('font-size', 9).attr('fill', '#555').text('Sem dado');
   }
 
-  // --- Hover ---
-  map.on('mousemove', 'municipios-fill', (e) => {
-    if (e.features.length === 0) return;
+  // ── Troca de nível ────────────────────────────────────────
 
-    if (hoveredId !== null) {
-      map.setFeatureState({ source: 'municipios', sourceLayer: 'mun', id: hoveredId }, { hover: false });
-    }
-    hoveredId = e.features[0].id;
-    map.setFeatureState({ source: 'municipios', sourceLayer: 'mun', id: hoveredId }, { hover: true });
-    map.getCanvas().style.cursor = 'pointer';
-
-    const { name_muni, abbrev_state, code_muni } = e.features[0].properties;
-    popup.setLngLat(e.lngLat)
-      .setHTML(`<strong>${name_muni}</strong><br><span>${abbrev_state}</span>`)
-      .addTo(map);
-
-    if (selectedId === null) {
-      const code6 = String(Math.floor(code_muni / 10));
-      updatePanel(code6, name_muni, abbrev_state);
-    }
-  });
-
-  map.on('mouseleave', 'municipios-fill', () => {
-    if (hoveredId !== null) {
-      map.setFeatureState({ source: 'municipios', sourceLayer: 'mun', id: hoveredId }, { hover: false });
-    }
+  function switchLevel(newLevel) {
+    // Limpa seleção e painel
+    clearSelection();
+    clearPanel();
     hoveredId = null;
-    map.getCanvas().style.cursor = '';
     popup.remove();
-    if (selectedId === null) {
-      clearPanel();
-    }
+
+    // Esconde todos os grupos
+    Object.values(ALL_LAYER_GROUPS).forEach(ids =>
+      ids.forEach(id => map.setLayoutProperty(id, 'visibility', 'none'))
+    );
+
+    // Mostra o grupo do novo nível (brasil usa grupo uf)
+    const groupKey = newLevel === 'brasil' ? 'uf' : newLevel;
+    ALL_LAYER_GROUPS[groupKey].forEach(id =>
+      map.setLayoutProperty(id, 'visibility', 'visible')
+    );
+
+    currentLevel = newLevel;
+    applyChoropleth(newLevel);
+
+    // Atualiza label do hover
+    d3.select("#hover-label")
+      .text(`Passe o mouse sobre uma ${NIVEL_LABEL[newLevel].toLowerCase()}`)
+      .classed("active", false);
+  }
+
+  const NIVEL_LABEL = {
+    municipio: 'Município',
+    micro: 'Microrregião',
+    meso: 'Mesorregião',
+    uf: 'UF',
+    brasil: 'Região',
+  };
+
+  document.getElementById('nivel-select').addEventListener('change', e => {
+    switchLevel(e.target.value);
   });
 
-  // --- Click ---
-  map.on('click', 'municipios-fill', (e) => {
-    if (e.features.length === 0) return;
-    const feat      = e.features[0];
-    const clickedId = feat.id;
-    const { name_muni, abbrev_state, code_muni } = feat.properties;
-    const code6 = String(Math.floor(code_muni / 10));
+  // ── Hover (todos os fill layers — MapLibre só dispara para layers visíveis) ──
 
-    if (selectedId === clickedId) {
-      clearSelection();
-      clearPanel();
-    } else {
-      clearSelection();
-      selectedId = clickedId;
-      map.setFeatureState({ source: 'municipios', sourceLayer: 'mun', id: selectedId }, { selected: true });
-      updatePanel(code6, name_muni, abbrev_state);
-    }
+  const ALL_FILL_LAYERS = ['mun-fill', 'micro-fill', 'meso-fill', 'uf-fill'];
+
+  ALL_FILL_LAYERS.forEach(layerId => {
+    map.on('mousemove', layerId, (e) => {
+      if (e.features.length === 0) return;
+      const feat = e.features[0];
+      const cfg  = LEVEL_CFG[currentLevel];
+
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: hoveredId },
+                            { hover: false });
+      }
+      hoveredId = feat.id;
+      map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: hoveredId },
+                          { hover: true });
+      map.getCanvas().style.cursor = 'pointer';
+
+      const name   = cfg.nameFromProps(feat.properties);
+      const region = cfg.regionFromProps(feat.properties);
+      popup.setLngLat(e.lngLat)
+        .setHTML(`<strong>${name}</strong>${region ? `<br><span>${region}</span>` : ''}`)
+        .addTo(map);
+
+      if (selectedId === null) {
+        const code = cfg.codeFromProps(feat.properties);
+        updatePanel(code, name, region);
+      }
+    });
+
+    map.on('mouseleave', layerId, () => {
+      const cfg = LEVEL_CFG[currentLevel];
+      if (hoveredId !== null) {
+        map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: hoveredId },
+                            { hover: false });
+      }
+      hoveredId = null;
+      map.getCanvas().style.cursor = '';
+      popup.remove();
+      if (selectedId === null) clearPanel();
+    });
+  });
+
+  // ── Click ────────────────────────────────────────────────
+
+  ALL_FILL_LAYERS.forEach(layerId => {
+    map.on('click', layerId, (e) => {
+      if (e.features.length === 0) return;
+      const feat      = e.features[0];
+      const cfg       = LEVEL_CFG[currentLevel];
+      const clickedId = feat.id;
+      const code      = cfg.codeFromProps(feat.properties);
+      const name      = cfg.nameFromProps(feat.properties);
+      const region    = cfg.regionFromProps(feat.properties);
+
+      if (selectedId === clickedId) {
+        clearSelection();
+        clearPanel();
+      } else {
+        clearSelection();
+        selectedId = clickedId;
+        map.setFeatureState({ source: cfg.src, sourceLayer: cfg.srcLayer, id: selectedId },
+                            { selected: true });
+        updatePanel(code, name, region);
+      }
+    });
   });
 
   // Click fora deseleciona
   map.on('click', (e) => {
-    const features = map.queryRenderedFeatures(e.point, { layers: ['municipios-fill'] });
-    if (features.length === 0) {
-      clearSelection();
-      clearPanel();
-    }
+    const cfg      = LEVEL_CFG[currentLevel];
+    const features = map.queryRenderedFeatures(e.point, { layers: [cfg.eventLayer] });
+    if (features.length === 0) { clearSelection(); clearPanel(); }
   });
 
-  // Aguarda mapa carregar para aplicar choropleth
+  // ── Carregamento do mapa ─────────────────────────────────
+
   map.on('load', () => {
-    applyChoropleth();
+    applyChoropleth(currentLevel);
     document.getElementById('loading-overlay').style.display = 'none';
   });
 
   // ============================================================
-  // SECTION 7: PANEL UPDATE
+  // SECTION 8: PAINEL
   // ============================================================
 
   function clearPanel() {
-    d3.select("#hover-label").text("Passe o mouse sobre um município").classed("active", false);
+    d3.select("#hover-label")
+      .text(`Passe o mouse sobre uma ${NIVEL_LABEL[currentLevel].toLowerCase()}`)
+      .classed("active", false);
     d3.select("#placeholder").style("display", null);
     d3.select("#panel-content").style("display", "none");
   }
 
-  function updatePanel(id, name, state) {
+  function updatePanel(code, name, region) {
     d3.select("#mun-name").text(name);
-    d3.select("#mun-state").text(state);
-    d3.select("#hover-label").text(`${name} — ${state}`).classed("active", true);
+    d3.select("#mun-state").text(region);
+    d3.select("#hover-label").text(region ? `${name} — ${region}` : name).classed("active", true);
     d3.select("#placeholder").style("display", "none");
     d3.select("#panel-content").style("display", "block");
-    renderTabelaCruzada(id);
-    renderBarChart(id);
+
+    // Busca linhas para este nível/código
+    const rows = dataByLevel[currentLevel].get(code) || [];
+    renderTabelaCruzada(rows);
+    renderBarChart(rows);
   }
 
   // ============================================================
-  // SECTION 8: TABELA CRUZADA
+  // SECTION 9: TABELA CRUZADA
   // ============================================================
 
-  function renderTabelaCruzada(id) {
+  function renderTabelaCruzada(rows) {
     const container = d3.select("#tabela-content");
     container.html("");
 
-    const rows = dataMap.get(id) || [];
     if (rows.length === 0) {
-      container.append("p").attr("class", "no-data").text("Sem dados RAIS para este município.");
+      container.append("p").attr("class", "no-data").text("Sem dados RAIS para esta região.");
       return;
     }
 
-    // Monta lookup: grupo → nat → n
     const lookup = {};
-    GRUPOS.forEach(g => {
-      lookup[g.key] = {};
-      NATS.forEach(nat => { lookup[g.key][nat] = 0; });
-    });
+    GRUPOS.forEach(g => { lookup[g.key] = {}; NATS.forEach(n => { lookup[g.key][n] = 0; }); });
     rows.forEach(r => {
-      if (lookup[r.grupo_saude] && NATS.includes(r.natureza_juridica_)) {
+      if (lookup[r.grupo_saude] && NATS.includes(r.natureza_juridica_))
         lookup[r.grupo_saude][r.natureza_juridica_] += r.n;
-      }
     });
 
-    // Totais por coluna (natureza)
-    const totaisNat = {};
-    NATS.forEach(nat => {
-      totaisNat[nat] = d3.sum(GRUPOS, g => lookup[g.key][nat]);
-    });
-    const totalGeral = d3.sum(NATS, nat => totaisNat[nat]);
+    const totaisNat  = {};
+    NATS.forEach(n => { totaisNat[n] = d3.sum(GRUPOS, g => lookup[g.key][n]); });
+    const totalGeral = d3.sum(NATS, n => totaisNat[n]);
 
     const wrap  = container.append("div").attr("class", "data-table-wrap");
     const table = wrap.append("table").attr("class", "data-table");
 
-    // Cabeçalho
     const thead = table.append("thead").append("tr");
     thead.append("th").text("Grupo").style("text-align", "left");
-    NATS.forEach(nat => thead.append("th").text(nat));
+    NATS.forEach(n => thead.append("th").text(n));
     thead.append("th").text("Total").attr("class", "col-total");
 
-    // Corpo
     const tbody = table.append("tbody");
     GRUPOS.forEach(g => {
-      const rowTotal = d3.sum(NATS, nat => lookup[g.key][nat]);
+      const rowTotal = d3.sum(NATS, n => lookup[g.key][n]);
       const tr = tbody.append("tr");
       tr.append("td").text(g.label).style("text-align", "left");
-      NATS.forEach(nat => tr.append("td").text(fmtN(lookup[g.key][nat])));
+      NATS.forEach(n => tr.append("td").text(fmtN(lookup[g.key][n])));
       tr.append("td").text(fmtN(rowTotal)).attr("class", "col-total");
     });
 
-    // Linha de totais
     const trTot = tbody.append("tr").attr("class", "row-total");
     trTot.append("td").text("Total").style("text-align", "left");
-    NATS.forEach(nat => trTot.append("td").text(fmtN(totaisNat[nat])));
+    NATS.forEach(n => trTot.append("td").text(fmtN(totaisNat[n])));
     trTot.append("td").text(fmtN(totalGeral)).attr("class", "col-total");
   }
 
   // ============================================================
-  // SECTION 9: GRÁFICO DE BARRAS HORIZONTAIS EMPILHADAS
+  // SECTION 10: GRÁFICO DE BARRAS HORIZONTAIS
   // ============================================================
 
-  function renderBarChart(id) {
+  function renderBarChart(rows) {
     const container = d3.select("#chart-content");
     container.html("");
 
-    const rows = dataMap.get(id) || [];
     if (rows.length === 0) {
-      container.append("p").attr("class", "no-data").text("Sem dados para este município.");
+      container.append("p").attr("class", "no-data").text("Sem dados para esta região.");
       return;
     }
 
-    // Prepara dados: por grupo, total por natureza (exclui OcupOutros_SetorOutros do gráfico)
-    const GRUPOS_CHART = GRUPOS.filter(g => g.key !== 'OcupOutros_SetorOutros');
-
     const lookup = {};
-    GRUPOS_CHART.forEach(g => {
-      lookup[g.key] = {};
-      NATS.forEach(nat => { lookup[g.key][nat] = 0; });
-    });
+    GRUPOS_CHART.forEach(g => { lookup[g.key] = {}; NATS.forEach(n => { lookup[g.key][n] = 0; }); });
     rows.forEach(r => {
-      if (lookup[r.grupo_saude] && NATS.includes(r.natureza_juridica_)) {
+      if (lookup[r.grupo_saude] && NATS.includes(r.natureza_juridica_))
         lookup[r.grupo_saude][r.natureza_juridica_] += r.n;
-      }
     });
 
     const chartData = GRUPOS_CHART.map(g => {
       const obj = { grupo: g.key, label: g.label };
-      NATS.forEach(nat => { obj[nat] = lookup[g.key][nat]; });
-      obj.total = d3.sum(NATS, nat => obj[nat]);
+      NATS.forEach(n => { obj[n] = lookup[g.key][n]; });
+      obj.total = d3.sum(NATS, n => obj[n]);
       return obj;
     });
 
     const margin = { top: 10, right: 14, bottom: 28, left: 180 };
-    const W = 500, H = 160;
+    const W = 500, H = 140;
     const iW = W - margin.left - margin.right;
     const iH = H - margin.top  - margin.bottom;
 
     const series  = d3.stack().keys(NATS)(chartData);
-    const maxVal  = d3.max(chartData, d => d.total);
+    const maxVal  = d3.max(chartData, d => d.total) || 1;
 
     const xScale = d3.scaleLinear().domain([0, maxVal * 1.05]).range([0, iW]);
     const yScale = d3.scaleBand().domain(GRUPOS_CHART.map(g => g.label)).range([0, iH]).padding(0.2);
 
     const wrap = container.append("div").attr("class", "chart-wrap");
-    const svg  = wrap.append("svg").attr("viewBox", `0 0 ${W} ${H}`).attr("preserveAspectRatio", "xMidYMid meet");
+    const svg  = wrap.append("svg").attr("viewBox", `0 0 ${W} ${H}`)
+                    .attr("preserveAspectRatio", "xMidYMid meet");
     const g    = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
 
-    // Gridlines
     g.append("g").selectAll("line")
       .data(xScale.ticks(4)).enter().append("line").attr("class", "gridline")
       .attr("x1", d => xScale(d)).attr("x2", d => xScale(d))
       .attr("y1", 0).attr("y2", iH);
 
-    // Barras
-    g.selectAll(".series")
-      .data(series).enter().append("g")
+    g.selectAll(".series").data(series).enter().append("g")
       .attr("fill", s => NAT_COLORS[s.key])
       .selectAll("rect").data(s => s).enter().append("rect")
-      .attr("y",      d => yScale(GRUPOS.find(gg => gg.key === d.data.grupo).label))
+      .attr("y",      d => yScale(GRUPOS_CHART.find(gg => gg.key === d.data.grupo).label))
       .attr("x",      d => xScale(d[0]))
       .attr("width",  d => xScale(d[1]) - xScale(d[0]))
       .attr("height", yScale.bandwidth())
@@ -465,12 +615,11 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       .call(d3.axisLeft(yScale).tickSize(0))
       .select(".domain").remove();
 
-    // Legenda
     const leg = wrap.append("div").attr("class", "chart-legend");
-    NATS.forEach(nat => {
+    NATS.forEach(n => {
       const span = leg.append("span");
-      span.append("span").attr("class", "swatch").style("background", NAT_COLORS[nat]);
-      span.append("span").text(nat);
+      span.append("span").attr("class", "swatch").style("background", NAT_COLORS[n]);
+      span.append("span").text(n);
     });
   }
 

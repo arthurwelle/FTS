@@ -26,6 +26,17 @@
 
     <!-- LEFT: MAP -->
     <div id="map-panel">
+      <!-- Dropdown de nível geográfico -->
+      <div id="nivel-control">
+        <label for="nivel-select">Nível geográfico</label>
+        <select id="nivel-select">
+          <option value="municipio">Município</option>
+          <option value="micro">Microrregião</option>
+          <option value="meso">Mesorregião</option>
+          <option value="uf">UF</option>
+          <option value="brasil">Brasil</option>
+        </select>
+      </div>
       <div id="choro-legend"></div>
     </div>
 
@@ -33,7 +44,7 @@
     <div id="info-panel">
 
       <div id="placeholder">
-        <span>← Passe o mouse sobre um município</span>
+        <span>← Passe o mouse sobre o mapa</span>
       </div>
 
       <div id="panel-content" style="display:none">
@@ -47,7 +58,7 @@
         <section class="data-section">
           <h3>Vínculos por Grupo de Ocupação/Setor e Natureza Jurídica</h3>
           <div id="tabela-content">
-            <p class="no-data">Sem dados para este município.</p>
+            <p class="no-data">Sem dados para esta região.</p>
           </div>
         </section>
 
@@ -55,7 +66,7 @@
         <section class="data-section">
           <h3>Distribuição por Natureza Jurídica</h3>
           <div id="chart-content">
-            <p class="no-data">Sem dados para este município.</p>
+            <p class="no-data">Sem dados para esta região.</p>
           </div>
         </section>
 
