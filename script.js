@@ -5,6 +5,13 @@
 const fmtN   = d3.format(",.0f");
 const fmtPct = d3.format(".1%");
 
+// Converte a string "rgb(r, g, b)" do D3 para "#rrggbb"
+// MapLibre não aceita rgb() em match expressions — precisa de hex
+function toHex(rgbStr) {
+  const m = rgbStr.match(/\d+/g);
+  return '#' + m.map(x => (+x).toString(16).padStart(2, '0')).join('');
+}
+
 // ============================================================
 // SECTION 2: TOOLTIP ELEMENT
 // ============================================================
@@ -272,7 +279,7 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
   // ── Choropleth ─────────────────────────────────────────────
 
-  const colorScale = d3.scaleSequential(d3.interpolateViridis).domain([0, 1]);
+  const colorScale = t => toHex(d3.interpolateViridis(t));
 
   function computeChoroMap(level) {
     const cmap = new Map();
@@ -327,7 +334,7 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       .attr('x1', '0%').attr('x2', '100%');
     d3.range(0, 1.01, 0.05).forEach(t => {
       grad.append('stop').attr('offset', `${Math.round(t * 100)}%`)
-        .attr('stop-color', colorScale(t));
+        .attr('stop-color', toHex(d3.interpolateViridis(t)));
     });
 
     svg.append('rect').attr('x', barX).attr('y', barY)
@@ -370,10 +377,14 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
     currentLevel = newLevel;
     applyChoropleth(newLevel);
 
-    // Atualiza label do hover
-    d3.select("#hover-label")
-      .text(`Passe o mouse sobre uma ${NIVEL_LABEL[newLevel].toLowerCase()}`)
-      .classed("active", false);
+    if (newLevel === 'brasil') {
+      // Mostra dados imediatamente, sem precisar de hover/click
+      updatePanel('brasil', 'Brasil', '');
+    } else {
+      d3.select("#hover-label")
+        .text(`Passe o mouse sobre uma ${NIVEL_LABEL[newLevel].toLowerCase()}`)
+        .classed("active", false);
+    }
   }
 
   const NIVEL_LABEL = {
@@ -394,6 +405,7 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
   ALL_FILL_LAYERS.forEach(layerId => {
     map.on('mousemove', layerId, (e) => {
+      if (currentLevel === 'brasil') return;
       if (e.features.length === 0) return;
       const feat = e.features[0];
       const cfg  = LEVEL_CFG[currentLevel];
@@ -436,6 +448,7 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
 
   ALL_FILL_LAYERS.forEach(layerId => {
     map.on('click', layerId, (e) => {
+      if (currentLevel === 'brasil') return;
       if (e.features.length === 0) return;
       const feat      = e.features[0];
       const cfg       = LEVEL_CFG[currentLevel];
@@ -457,8 +470,9 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
     });
   });
 
-  // Click fora deseleciona
+  // Click fora deseleciona (não se aplica ao nível Brasil)
   map.on('click', (e) => {
+    if (currentLevel === 'brasil') return;
     const cfg      = LEVEL_CFG[currentLevel];
     const features = map.queryRenderedFeatures(e.point, { layers: [cfg.eventLayer] });
     if (features.length === 0) { clearSelection(); clearPanel(); }

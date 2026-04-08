@@ -1,24 +1,35 @@
 # build_pmtiles.py
 # Converte meso.gpkg e micro.gpkg para PMTiles em GEO/
-# usando fiona + mapbox-vector-tile + pmtiles.
+# usando fiona + pyproj + mapbox-vector-tile + pmtiles.
+# Reprojecta para EPSG:3857 (Web Mercator) antes de codificar os tiles,
+# corrigindo o descasamento de geometrias no zoom.
+
 import gzip
 import fiona
 import mercantile
+from pyproj import Transformer
 from shapely.geometry import shape, mapping, box
+from shapely.ops import transform as shp_transform
 from shapely.validation import make_valid
 from mapbox_vector_tile import encode as mvt_encode
 from pmtiles.writer import Writer, Compression
 from pmtiles.reader import zxy_to_tileid
 
-# ─── Bounding box do Brasil ────────────────────────────────────────────────
-BRAZIL_BOUNDS = (-74.0, -34.0, -28.0, 6.0)
+# Reprojetores
+_to_3857 = Transformer.from_crs("EPSG:4674", "EPSG:3857", always_xy=True)
 
-# ─── Função principal de conversão ────────────────────────────────────────
+def to_3857(geom):
+    return shp_transform(_to_3857.transform, geom)
+
+# Bounding box do Brasil em EPSG:4326 (para selecionar tiles)
+BRAZIL_BOUNDS_4326 = (-74.0, -34.0, -28.0, 6.0)
+
+
 def gpkg_to_pmtiles(gpkg_path, pmtiles_path, layer_name, id_field,
-                    zoom_min=2, zoom_max=8, compress=True):
+                    zoom_min=2, zoom_max=8):
     print(f"\nConvertendo {gpkg_path} -> {pmtiles_path}")
 
-    # 1. Lê todas as features do gpkg
+    # 1. Lê e reprojecta todas as features para EPSG:3857
     features = []
     with fiona.open(gpkg_path, encoding="utf-8") as src:
         for feat in src:
@@ -27,46 +38,50 @@ def gpkg_to_pmtiles(gpkg_path, pmtiles_path, layer_name, id_field,
             geom = shape(feat.geometry)
             if not geom.is_valid:
                 geom = make_valid(geom)
+            geom_3857 = to_3857(geom)
             props = {k: (int(v) if isinstance(v, float) and v == int(v) else v)
                      for k, v in feat.properties.items() if v is not None}
             features.append({
-                "geometry": geom,
+                "geometry": geom_3857,   # agora em metros (EPSG:3857)
                 "properties": props,
                 "fid": int(props[id_field]),
             })
-    print(f"  features lidas: {len(features)}")
+    print(f"  features lidas e reprojetadas: {len(features)}")
 
-    # 2. Índice espacial simples: feature bbox → tiles cobertas
-    tile_dict = {}   # (z,x,y) → [feature indices]
+    # 2. Para cada zoom/tile, seleciona e codifica features
+    tile_dict = {}
     for i, feat in enumerate(features):
-        b = feat["geometry"].bounds   # (minx, miny, maxx, maxy)
-        # clip ao Brasil
-        minx = max(b[0], BRAZIL_BOUNDS[0])
-        miny = max(b[1], BRAZIL_BOUNDS[1])
-        maxx = min(b[2], BRAZIL_BOUNDS[2])
-        maxy = min(b[3], BRAZIL_BOUNDS[3])
-        if minx > maxx or miny > maxy:
+        b = feat["geometry"].bounds   # (minx_3857, miny_3857, maxx_3857, maxy_3857)
+        # Converte bounds de volta para 4326 apenas para selecionar quais tiles cobrir
+        west  = max(_to_3857.transform(b[0], 0, direction="INVERSE")[0], BRAZIL_BOUNDS_4326[0])
+        east  = min(_to_3857.transform(b[2], 0, direction="INVERSE")[0], BRAZIL_BOUNDS_4326[2])
+        south = max(_to_3857.transform(0, b[1], direction="INVERSE")[1], BRAZIL_BOUNDS_4326[1])
+        north = min(_to_3857.transform(0, b[3], direction="INVERSE")[1], BRAZIL_BOUNDS_4326[3])
+        if west > east or south > north:
             continue
         for zoom in range(zoom_min, zoom_max + 1):
-            for tile in mercantile.tiles(minx, miny, maxx, maxy, zooms=zoom):
+            for tile in mercantile.tiles(west, south, east, north, zooms=zoom):
                 key = (tile.z, tile.x, tile.y)
                 tile_dict.setdefault(key, []).append(i)
 
     print(f"  tiles a gerar: {len(tile_dict)}")
 
-    # 3. Gera cada tile MVT e escreve em PMTiles
+    # 3. Codifica cada tile em MVT com bounds em EPSG:3857
     with open(pmtiles_path, "wb") as f:
         writer = Writer(f)
 
-        for (z, x, y), feat_ids in sorted(tile_dict.items(),
-                                           key=lambda kv: zxy_to_tileid(kv[0][0], kv[0][1], kv[0][2])):
-            tb = mercantile.bounds(x, y, z)
-            tile_box = box(tb.west, tb.south, tb.east, tb.north)
+        for (z, x, y), feat_ids in sorted(
+                tile_dict.items(),
+                key=lambda kv: zxy_to_tileid(kv[0][0], kv[0][1], kv[0][2])):
+
+            # Bounds do tile em EPSG:3857
+            tb_3857 = mercantile.xy_bounds(x, y, z)
+            tile_box_3857 = box(tb_3857.left, tb_3857.bottom, tb_3857.right, tb_3857.top)
 
             layer_features = []
             for i in feat_ids:
                 feat = features[i]
-                clipped = feat["geometry"].intersection(tile_box)
+                clipped = feat["geometry"].intersection(tile_box_3857)
                 if clipped.is_empty:
                     continue
                 layer_features.append({
@@ -78,30 +93,30 @@ def gpkg_to_pmtiles(gpkg_path, pmtiles_path, layer_name, id_field,
             if not layer_features:
                 continue
 
+            # Quantiza com bounds em EPSG:3857 — coordenadas já estão em metros
             mvt_raw = mvt_encode(
                 {"name": layer_name, "features": layer_features},
                 default_options={
-                    "quantize_bounds": (tb.west, tb.south, tb.east, tb.north),
+                    "quantize_bounds": (tb_3857.left, tb_3857.bottom,
+                                        tb_3857.right, tb_3857.top),
                     "extents": 4096,
                 },
             )
-            mvt = gzip.compress(mvt_raw) if compress else mvt_raw
+            mvt_gz = gzip.compress(mvt_raw)
 
-            tile_id = zxy_to_tileid(z, x, y)
-            writer.write_tile(tile_id, mvt)
+            writer.write_tile(zxy_to_tileid(z, x, y), mvt_gz)
 
-        # 4. Finaliza com header e metadados
-        # tile_type: 1 = MVT (precisa de .value como enum)
+        # 4. Finaliza
         class _TileType:
-            value = 1
-        tile_compression = Compression.GZIP if compress else Compression.NONE
+            value = 1   # MVT
+
         header = {
             "tile_type":        _TileType(),
-            "tile_compression": tile_compression,
-            "min_lon_e7": int(BRAZIL_BOUNDS[0] * 1e7),
-            "min_lat_e7": int(BRAZIL_BOUNDS[1] * 1e7),
-            "max_lon_e7": int(BRAZIL_BOUNDS[2] * 1e7),
-            "max_lat_e7": int(BRAZIL_BOUNDS[3] * 1e7),
+            "tile_compression": Compression.GZIP,
+            "min_lon_e7": int(BRAZIL_BOUNDS_4326[0] * 1e7),
+            "min_lat_e7": int(BRAZIL_BOUNDS_4326[1] * 1e7),
+            "max_lon_e7": int(BRAZIL_BOUNDS_4326[2] * 1e7),
+            "max_lat_e7": int(BRAZIL_BOUNDS_4326[3] * 1e7),
         }
         metadata = {"name": layer_name, "format": "pbf"}
         writer.finalize(header, metadata)
@@ -114,18 +129,18 @@ if __name__ == "__main__":
     GEO_DST = "GEO"
 
     gpkg_to_pmtiles(
-        gpkg_path   = f"{GEO_SRC}/meso.gpkg",
-        pmtiles_path= f"{GEO_DST}/meso.pmtiles",
-        layer_name  = "meso",
-        id_field    = "code_meso",
+        gpkg_path    = f"{GEO_SRC}/meso.gpkg",
+        pmtiles_path = f"{GEO_DST}/meso.pmtiles",
+        layer_name   = "meso",
+        id_field     = "code_meso",
         zoom_min=2, zoom_max=7,
     )
 
     gpkg_to_pmtiles(
-        gpkg_path   = f"{GEO_SRC}/micro.gpkg",
-        pmtiles_path= f"{GEO_DST}/micro.pmtiles",
-        layer_name  = "micro",
-        id_field    = "code_micro",
+        gpkg_path    = f"{GEO_SRC}/micro.gpkg",
+        pmtiles_path = f"{GEO_DST}/micro.pmtiles",
+        layer_name   = "micro",
+        id_field     = "code_micro",
         zoom_min=2, zoom_max=9,
     )
 
