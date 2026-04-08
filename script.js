@@ -258,17 +258,43 @@ const FTS_GRUPOS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros
 // SECTION 7: CARREGA DADOS + INICIALIZA
 // ============================================================
 
-d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
+// Cores e labels para os gráficos de barra única do CSV novo
+const FTS2_COLORS = {
+  'OcupSaude_SetorSaude':   '#2166ac',
+  'OcupSaude_SetorOutros':  '#74add1',
+  'OcupOutros_SetorSaude':  '#f4a582',
+};
+const FTS2_LABELS = {
+  'OcupSaude_SetorSaude':   'Ocup. Saúde / Setor Saúde',
+  'OcupSaude_SetorOutros':  'Ocup. Saúde / Outros Setores',
+  'OcupOutros_SetorSaude':  'Outros / Setor Saúde',
+};
+
+Promise.all([
+  d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv"),
+  d3.csv("DADOS/rais_vinculos_FTS_2024_Municipio.csv"),
+]).then(([raw, raw2]) => {
 
   raw.forEach(r => { r.n = +r.n; });
+  raw2.forEach(r => { r.Qtd = +r.Qtd; r.valor_remuneracao_media_ = +r.valor_remuneracao_media_; });
 
-  // Pré-agrega dados por cada nível
+  // Pré-agrega CSV1 (NatJur) por cada nível
   const dataByLevel = {
     municipio: d3.group(raw.filter(r => r.id_municipio), r => r.id_municipio),
     micro:     d3.group(raw.filter(r => r.id_micro),    r => r.id_micro),
     meso:      d3.group(raw.filter(r => r.id_meso),     r => r.id_meso),
     uf:        d3.group(raw.filter(r => r.id_uf),       r => r.id_uf),
     brasil:    new Map([['brasil', raw]]),
+  };
+
+  // Pré-agrega CSV2 (CBO+renda) por cada nível
+  // id_municipio no CSV2 tem 7 dígitos; os primeiros 6 = chave de municipio
+  const dataByLevel2 = {
+    municipio: d3.group(raw2.filter(r => r.id_municipio), r => r.id_municipio.slice(0, 6)),
+    micro:     d3.group(raw2.filter(r => r.id_micro),     r => r.id_micro),
+    meso:      d3.group(raw2.filter(r => r.id_meso),      r => r.id_meso),
+    uf:        d3.group(raw2.filter(r => r.id_uf),        r => r.id_uf),
+    brasil:    new Map([['brasil', raw2]]),
   };
 
   // ── Choropleth ─────────────────────────────────────────────
@@ -492,6 +518,8 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       .classed("active", false);
     d3.select("#placeholder").style("display", null);
     d3.select("#panel-content").style("display", "none");
+    d3.select("#fts-bar-content").html('<p class="no-data">Sem dados para esta região.</p>');
+    d3.select("#nat-bar-content").html('<p class="no-data">Sem dados para esta região.</p>');
   }
 
   function updatePanel(code, name, region) {
@@ -502,9 +530,12 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
     d3.select("#panel-content").style("display", "block");
 
     // Busca linhas para este nível/código
-    const rows = dataByLevel[currentLevel].get(code) || [];
+    const rows  = dataByLevel[currentLevel].get(code) || [];
+    const rows2 = dataByLevel2[currentLevel].get(code) || [];
     renderTabelaCruzada(rows);
     renderBarChart(rows);
+    renderFtsBar(rows2);
+    renderNatBar(rows2);
   }
 
   // ============================================================
@@ -631,6 +662,133 @@ d3.csv("DADOS/RAIS_FTS_NatJur_Municipio.csv").then(raw => {
       const span = leg.append("span");
       span.append("span").attr("class", "swatch").style("background", NAT_COLORS[n]);
       span.append("span").text(n);
+    });
+  }
+
+  // ============================================================
+  // SECTION 11: STACKED BAR ÚNICA — FTS (excl. OcupOutros_SetorOutros)
+  // ============================================================
+
+  function renderFtsBar(rows2) {
+    const container = d3.select("#fts-bar-content");
+    container.html("");
+
+    // Filtra FTS relevantes (exclui OcupOutros_SetorOutros)
+    const FTS_KEYS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
+    const validRows = rows2.filter(r => FTS_KEYS.includes(r.FTS));
+
+    if (validRows.length === 0) {
+      container.append("p").attr("class", "no-data").text("Sem dados para esta região.");
+      return;
+    }
+
+    // Soma Qtd por FTS
+    const totByFts = {};
+    FTS_KEYS.forEach(k => { totByFts[k] = 0; });
+    validRows.forEach(r => { if (totByFts[r.FTS] !== undefined) totByFts[r.FTS] += r.Qtd; });
+    const total = d3.sum(FTS_KEYS, k => totByFts[k]);
+
+    renderSingleStackedBar(
+      container,
+      FTS_KEYS,
+      FTS2_COLORS,
+      FTS2_LABELS,
+      k => totByFts[k],
+      total,
+      "vínculos FTS"
+    );
+  }
+
+  // ============================================================
+  // SECTION 12: STACKED BAR ÚNICA — NATUREZA JURÍDICA (excl. OcupOutros_SetorOutros)
+  // ============================================================
+
+  function renderNatBar(rows2) {
+    const container = d3.select("#nat-bar-content");
+    container.html("");
+
+    const FTS_KEYS = ['OcupSaude_SetorSaude', 'OcupSaude_SetorOutros', 'OcupOutros_SetorSaude'];
+    const validRows = rows2.filter(r => FTS_KEYS.includes(r.FTS));
+
+    if (validRows.length === 0) {
+      container.append("p").attr("class", "no-data").text("Sem dados para esta região.");
+      return;
+    }
+
+    const totByNat = {};
+    NATS.forEach(n => { totByNat[n] = 0; });
+    validRows.forEach(r => { if (totByNat[r.natureza_juridica_] !== undefined) totByNat[r.natureza_juridica_] += r.Qtd; });
+    const total = d3.sum(NATS, n => totByNat[n]);
+
+    renderSingleStackedBar(
+      container,
+      NATS,
+      NAT_COLORS,
+      Object.fromEntries(NATS.map(n => [n, n])),
+      n => totByNat[n],
+      total,
+      "vínculos"
+    );
+  }
+
+  // ── Helper: barra única horizontal empilhada ───────────────
+  function renderSingleStackedBar(container, keys, colors, labels, valFn, total, unit) {
+    const W = 460, barH = 36, legendH = 50;
+    const H = barH + legendH + 20;
+    const margin = { left: 0, right: 0 };
+    const iW = W - margin.left - margin.right;
+
+    const wrap = container.append("div").attr("class", "chart-wrap");
+    const svg  = wrap.append("svg")
+      .attr("viewBox", `0 0 ${W} ${H}`)
+      .attr("preserveAspectRatio", "xMidYMid meet");
+
+    const xScale = d3.scaleLinear().domain([0, total]).range([0, iW]);
+
+    // Barras empilhadas
+    let cumX = 0;
+    keys.forEach(k => {
+      const v = valFn(k);
+      const w = xScale(v);
+      if (w < 0.5) { cumX += w; return; }
+
+      svg.append("rect")
+        .attr("x", cumX).attr("y", 4)
+        .attr("width", w).attr("height", barH)
+        .attr("fill", colors[k])
+        .on("mouseover", (event) =>
+          showTooltip(`<strong>${labels[k]}</strong><br>${fmtN(v)} ${unit} (${fmtPct(v / total)})`, event))
+        .on("mousemove", event => moveTooltip(event))
+        .on("mouseout", () => hideTooltip());
+
+      // Label dentro da barra se larga o suficiente
+      if (w > 50) {
+        svg.append("text")
+          .attr("x", cumX + w / 2).attr("y", 4 + barH / 2 + 4)
+          .attr("text-anchor", "middle")
+          .attr("font-size", 10).attr("fill", "#fff").attr("font-weight", "bold")
+          .attr("pointer-events", "none")
+          .text(fmtPct(v / total));
+      }
+      cumX += w;
+    });
+
+    // Total à direita
+    svg.append("text")
+      .attr("x", iW).attr("y", 4 + barH / 2 + 4)
+      .attr("text-anchor", "end")
+      .attr("font-size", 10).attr("fill", "#555")
+      .attr("pointer-events", "none")
+      .text(`n = ${fmtN(total)}`);
+
+    // Legenda abaixo
+    const leg = wrap.append("div").attr("class", "chart-legend");
+    keys.forEach(k => {
+      const v = valFn(k);
+      if (v === 0) return;
+      const span = leg.append("span");
+      span.append("span").attr("class", "swatch").style("background", colors[k]);
+      span.append("span").text(`${labels[k]} (${fmtN(v)})`);
     });
   }
 
