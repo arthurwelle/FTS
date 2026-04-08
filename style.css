@@ -75,11 +75,10 @@ body {
   font-weight: bold;
 }
 
-/* Logo do Observatório */
+/* Logo do Observatório — borda direita alinhada ao centro da página */
 #obs-logo-link {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 50%;
   display: flex;
   align-items: center;
 }
