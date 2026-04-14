@@ -2,6 +2,7 @@
 title: "Metodologia — Força de Trabalho em Saúde nos Municípios Brasileiros"
 output:
   html_document:
+    embed-resources: true
     theme: flatly
     toc: true
     toc_float: true
