@@ -1,6 +1,7 @@
 # Arquivos gerados pelo R
 *.html
 !index.html
+!metodologia.html
 *.RData
 .Rhistory
 
